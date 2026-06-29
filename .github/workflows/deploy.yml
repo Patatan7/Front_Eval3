@@ -1,0 +1,76 @@
+name: CI/CD Frontend - EFT Innovatech
+
+on:
+  push:
+    branches:
+      - deploy
+
+env:
+  AWS_REGION: us-east-1
+  ECS_CLUSTER: cluster-eft-innovatech
+  ECS_SERVICE: service-frontend
+  ALB_NAME: alb-eft-innovatech
+
+jobs:
+  build-push-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar credenciales AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login en Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Obtiene el DNS publico del ALB dinamicamente, para no hardcodearlo
+      # en el codigo fuente. Con esto se construyen las URLs reales que el
+      # Frontend usara para llamar a los backends a traves del balanceador.
+      - name: Obtener DNS del Load Balancer
+        id: alb-dns
+        run: |
+          ALB_DNS=$(aws elbv2 describe-load-balancers \
+            --names ${{ env.ALB_NAME }} \
+            --query "LoadBalancers[0].DNSName" \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          echo "alb_dns=$ALB_DNS" >> "$GITHUB_OUTPUT"
+          echo "ALB DNS resuelto: $ALB_DNS"
+
+      - name: Build y Push imagen a ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ github.sha }}
+          ALB_DNS: ${{ steps.alb-dns.outputs.alb_dns }}
+        run: |
+          docker build \
+            --build-arg BACKEND_USERS_URL=http://$ALB_DNS${{ secrets.BACKEND_USERS_PATH }} \
+            --build-arg BACKEND_PRODUCTS_URL=http://$ALB_DNS${{ secrets.BACKEND_PRODUCTS_PATH }} \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      - name: Forzar nuevo deployment en ECS
+        run: |
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE }} \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Esperar a que el servicio este estable
+        run: |
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }} \
+            --region ${{ env.AWS_REGION }}

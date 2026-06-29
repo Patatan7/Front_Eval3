@@ -1,0 +1,25 @@
+# Entorno y secretos
+.env
+.env.local
+*.env
+
+# Control de versiones
+.git
+.gitignore
+
+# Maven
+target/
+output/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Documentación
+README.md
+*.md
+
+# Sistema
+.DS_Store
+Thumbs.db
