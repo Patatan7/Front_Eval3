@@ -8,7 +8,7 @@ on:
 env:
   AWS_REGION: us-east-1
   ECS_CLUSTER: cluster-eft-innovatech
-  ECS_SERVICE: service-frontend
+  ECS_SERVICE: td-frontend-service
   ALB_NAME: alb-eft-innovatech
 
 jobs:
