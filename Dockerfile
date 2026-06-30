@@ -1,23 +1,22 @@
 # ================================
 # Stage 1: Builder (Maven + Java)
-# Genera los archivos estáticos (index.html, styles.css, script.js)
 # ================================
 FROM maven:3.9-eclipse-temurin-17-alpine AS builder
 
 WORKDIR /app
 
-# Variables de entorno usadas por StaticPageGenerator.java al generar script.js
-# Se sobreescriben en build-time con --build-arg para apuntar al ALB real
 ARG BACKEND_USERS_URL=http://localhost:8081
 ARG BACKEND_PRODUCTS_URL=http://localhost:8082
-ENV BACKEND_USERS_URL=${BACKEND_USERS_URL}
-ENV BACKEND_PRODUCTS_URL=${BACKEND_PRODUCTS_URL}
 
 COPY pom.xml .
 COPY src ./src
+COPY .env.example .env
 
-# Compila y ejecuta el generador -> crea /app/output/{index.html, styles.css, script.js}
-RUN mvn clean compile exec:java -q
+# Sobreescribir las URLs en el .env con los build-args recibidos
+RUN sed -i "s|BACKEND_USERS_URL=.*|BACKEND_USERS_URL=${BACKEND_USERS_URL}|" .env && \
+    sed -i "s|BACKEND_PRODUCTS_URL=.*|BACKEND_PRODUCTS_URL=${BACKEND_PRODUCTS_URL}|" .env && \
+    echo "URLs configuradas:" && cat .env && \
+    mvn clean compile exec:java -q
 
 # ================================
 # Stage 2: Production (Nginx minimalista)
